@@ -92,27 +92,27 @@ function check(e) {
 
 var project = (function() {
 	return {
-		updatePeriodCache = function() {
+		updatePeriodCache: function() {
 
 		},
 
-		updatePeriod = function() {
+		updatePeriod: function() {
 
 		},
 
-		isUpatePeriod = function(x, y)) {
+		isUpatePeriod: function(x, y) {
 
 		},
 
-		getPeriod = function() {
+		getPeriod: function() {
 
 		},
 
-		getWidth = function() {
+		getWidth: function() {
 
 		},
 
-		getHeight = function() {
+		getHeight: function() {
 
 		},
 	};
@@ -120,7 +120,6 @@ var project = (function() {
 
 var rowController = (function() {
 	return {
-		isUpdate
 	};
 })();
 
