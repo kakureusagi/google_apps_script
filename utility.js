@@ -1,10 +1,27 @@
 
-/**
- * トースト表示
- * @param  {string} str 表示文字列
- * @param  {number} second 表示時間（秒）。デフォルトでは５秒
- */
+
+
+
+
 function toast(str, second) {
-	spreadsheet.toast(str, second ? second : 5);
+	sheet.toast(str, second ? second: 5);
 }
+
+function isNumber(value) {
+	return !isNaN(value);
+}
+
+function isDate(value) {
+	return value instanceof Date;
+}
+
+function isUndefined(value) {
+	return typeof value === 'undefined';
+}
+
+function isNull(value) {
+	return value === null;
+};
+
+
 
