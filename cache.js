@@ -45,6 +45,16 @@ var cache = (function() {
 		var items = Utilities.jsonStringify(mItems);
 		mPublicCache.put(ITEMS, items, CACHE_TIME);
 	}
+	function remove(key) {
+		delete mItems[key];
+		var items = Utilities.jsonStringify(mItems);
+		mPublicCache.put(ITEMS, items, CACHE_TIME);
+	}
+
+	function removeAll() {
+		var items = Utilities.jsonStringify({});
+		mPublicCache.put(ITEMS, items, CACHE_TIME);
+	}
 
 	function prolong() {
 		var items = Utilities.jsonStringify(mItems);
@@ -78,6 +88,10 @@ var cache = (function() {
 			if (!key) return;
 			set(getKey(key), value);
 		},
+		remove: function(key) {
+			if (!key) return;
+			remove(getKey(key));
+		},
 
 		isRow: function(y, key) {
 			if (!key || !isNumber(y)) return false;
@@ -90,6 +104,10 @@ var cache = (function() {
 		setRow: function(y, key, value) {
 			if (!key || !isNumber(y)) return;
 			set(getRowKey(y, key), value);
+		},
+		removeRow: function(y, key) {
+			if (!key || !isNumber(y)) return;
+			remove(getRowKey(y, key));
 		},
 
 
@@ -104,6 +122,10 @@ var cache = (function() {
 		setColumn: function(x, key, value) {
 			if (!key || !isNumber(x)) return;
 			set(getColumnKey(x, key), value);
+		},
+		removeColumn: function(x, key) {
+			if (!key || !isNumber(x)) return;
+			remove(getColumnKey(x, key));
 		},
 
 
@@ -121,7 +143,12 @@ var cache = (function() {
 			if (!key || !isCell(x, y)) return;
 			set(getCellKey(x, y, key), value);
 		},
+		removeColumn: function(x, key) {
+			if (!key || !isCell(x, y)) return;
+			remove(getCellKey(x, y, key));
+		},
 
+		removeAll: removeAll,
 
 		prolong: prolong,
 	};

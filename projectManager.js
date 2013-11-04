@@ -17,7 +17,7 @@ var sheet = SpreadsheetApp.getActiveSheet();
 
 
 //position
-var AREA_ROOT_X = 5;
+var AREA_ROOT_X = 6;
 var AREA_ROOT_Y = 6;
 var SPECIAL_DAY_Y = AREA_ROOT_Y - 4;
 var YEAR_Y = AREA_ROOT_Y - 3;
@@ -29,14 +29,17 @@ var PROJECT_END_X = 2;
 var PROJECT_END_Y = 2;
 var START_X = 3;
 var PERIOD_X = 4;
+var PROGRESS_X = 5;
 
 //color
 var COLOR = {
+	TODAY: '#fcff84',
+
 	HOLIDAY: '#ff0000', //土日
-	NATIONAL_HOLIDAY: '#aa6666', //祝日
+	NATIONAL_HOLIDAY: '#ff8888', //祝日
 	NONE: '#ffffff', //平日
-	UNFINISHED: '#00ff00',
-	FINISHED: '#555555',
+	UNFINISHED: '#c5d5f7',
+	FINISHED: '#1660f4',
 };
 
 //キャッシュ用の名前
@@ -57,6 +60,15 @@ function onEdit(e) {
 }
 
 
+function open(e) {
+	project.updateCache();
+	row.updateCacheAll();
+	project.setToday();
+}
+
+function checkTimer() {
+	project.setToday();
+}
 
 function edit(e) {
 	var analyzer = new Analyzer('onEdit');
@@ -104,6 +116,10 @@ function check(e) {
 
 function prolongCache() {
 	cache.prolong();
+}
+
+function removeCache() {
+	cache.removeAll();
 }
 
 
@@ -241,6 +257,7 @@ var project = (function() {
 	 */
 	function updateCache() {
 		var period = getPeriodFromCell();
+		if (!period) return;
 
 		var temp = {
 			start: period.start.millisecond,
@@ -411,6 +428,17 @@ var project = (function() {
 		analyzer.set('set color on days');
 	}
 
+	function setToday() {
+		var period = getPeriod();
+		if (!period) return;
+
+		var today = timeController.get();
+		if (today.millisecond < period.start.millisecond || period.end.millisecond < today.millisecond) return;
+
+		var diff = today.diffDay(period.start);
+		sheet.getRange(YEAR_Y, AREA_ROOT_X + diff, 3, 1).setBackground(COLOR.TODAY);
+	}
+
 
 	return {
 		isSpecialColumn: isSpecialColumn,
@@ -423,6 +451,8 @@ var project = (function() {
 
 		getWidth: getWidth,
 		getHeight: getHeight,
+
+		setToday: setToday,
 	};
 })();
 
@@ -432,22 +462,30 @@ var row = (function() {
 
 
 
-	function getStartAndTimeFromCell(y) {
-		var startAndTime = sheet.getRange(y, START_X, 1, 2).getValues();
-		var start = startAndTime[0][0];
-		var time = Math.floor(startAndTime[0][1]);
-
+	function validateInfo(start, time, progress) {
 		if (!isDate(start) || !isNumber(time) || time <= 0) {
+			return false;
+		}
+		return true;
+	}
+
+	function getRowInfoFromCell(y) {
+		var info = sheet.getRange(y, START_X, 1, 3).getValues()[0];
+		var start = info[0];
+		var time = Math.floor(info[1]);
+		var progress = info[2] ? info[2] : 0;
+		if (!validateInfo(start, time, progress)) {
 			return null;
 		}
 
 		return {
 			start: timeController.get(start),
 			time: time,
+			progress: progress,
 		};
 	}
 
-	function getStartAndTime(y) {
+	function getRowInfo(y) {
 		if (!cache.isRow(y, CACHE_NAME)) return null;
 
 		var temp = cache.getRow(y, CACHE_NAME);
@@ -456,28 +494,34 @@ var row = (function() {
 		return {
 			start: timeController.get(temp.start),
 			time: temp.time,
+			progress: temp.progress,
 		};
 	}
 
 	function updateCache(y) {
-		var startAndTime = getStartAndTimeFromCell(y);
+		var info = getRowInfoFromCell(y);
+		if (!info) return;
+
 		var temp = {
-			start: startAndTime.start.millisecond,
-			time: startAndTime.time,
+			start: info.start.millisecond,
+			time: info.time,
+			progress: info.progress
 		};
 		cache.setRow(y, CACHE_NAME, temp);
 	}
 
 	function updateCacheAll() {
-		var startAndTimes = sheet.getRange(AREA_ROOT_Y, START_X, project.getHeight(), 2).getValues();
-		for (var i = 0 ; i < startAndTimes.length ; ++i) {
-			var start = startAndTimes[i][0];
-			var time = startAndTimes[i][1];
+		var info = sheet.getRange(AREA_ROOT_Y, START_X, project.getHeight(), 3).getValues();
+		for (var i = 0 ; i < info.length ; ++i) {
+			var start = info[i][0];
+			var time = Math.floor(info[i][1]);
+			var progress = info[i][2] ? info[i][2] : 0;
 			var data = null;
-			if (isDate(start) && isNumber(time) && time > 0) {
+			if (validateInfo(start, time, progress)) {
 				data = {
 					start: timeController.get(start).millisecond,
 					time: time,
+					progress:progress,
 				};
 			}
 
@@ -487,10 +531,10 @@ var row = (function() {
 
 	function isUpdate(x, y) {
 		if (y < AREA_ROOT_Y) return false;
-		if (x != START_X && x != PERIOD_X) return false;
+		if (x != START_X && x != PERIOD_X && x != PROGRESS_X) return false;
 
-		var temp = getStartAndTimeFromCell(y);
-		if (!temp) {
+		var info = getRowInfoFromCell(y);
+		if (!info) {
 			return false;
 		}
 
@@ -501,36 +545,41 @@ var row = (function() {
 		var projectPeriod = project.getPeriod();
 		if (!projectPeriod) return;
 
-		var targetRow = [];
+		var infos = [];
 		if (y) {
-			targetRow.push(getStartAndTime(y));
+			infos.push(getRowInfo(y));
 		}
 		else {
 			for (var h = 0 ; h < project.getHeight() ; ++h) {
-				targetRow.push(getStartAndTime(AREA_ROOT_Y + h));
+				infos.push(getRowInfo(AREA_ROOT_Y + h));
 			}
 		}
 
-		targetRow.forEach(function(temp, index) {
-			if (!temp) return;
+		var backgoundColors = sheet.getRange(AREA_ROOT_Y, AREA_ROOT_X, 1, project.getWidth()).getBackgrounds()[0];
+		infos.forEach(function(info, index) {
+			if (!info) return;
 
-			var start = temp.start;
-			var time = temp.time;
+			var start = info.start;
+			var time = info.time;
+			var progress = info.progress;
 			var posY = y ? y : AREA_ROOT_Y + index;
 
 			//プロジェクト期間より後ろの日付は無視
 			if (projectPeriod.end.millisecond < start.millisecond) return;
 
+			//プロジェクトの期間より前の日付
 			if (start.millisecond < projectPeriod.start.millisecond) {
 				toast('項目の開始日がプロジェクトの開始日よりも前になっています。', posY + '行目');
 				return;
 			}
 			
-
-			var width = project.getWidth();
-			var backgoundColors = sheet.getRange(AREA_ROOT_Y, AREA_ROOT_X, 1, width).getBackgrounds()[0];
+			/**
+			 * 色付け
+			 */
+			
 			var count = 0;
 			var finishedCount = 0;
+			var finishedPos = Math.floor(time * (progress / 100));
 			while (finishedCount != time) {
 				var t = timeController.instance(start).plusDay(count).get();
 
@@ -553,10 +602,15 @@ var row = (function() {
 				}
 
 				//平日
-				sheet.getRange(posY, AREA_ROOT_X + diff).setBackground(COLOR.UNFINISHED);
+				++finishedCount;
+				if (finishedCount > finishedPos) {
+					sheet.getRange(posY, AREA_ROOT_X + diff).setBackground(COLOR.UNFINISHED);
+				}
+				else {
+					sheet.getRange(posY, AREA_ROOT_X + diff).setBackground(COLOR.FINISHED);
+				}
 
 				++count;
-				++finishedCount;
 			}
 		});
 	}

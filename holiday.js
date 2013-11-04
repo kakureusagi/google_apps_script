@@ -24,7 +24,7 @@ var holiday = (function() {
 			.getCalendarById("ja.japanese#holiday@group.v.calendar.google.com")
 			.getEvents(
 				start.date,
-				end.date
+				timeController.instance(end.date).plusDay(1).get().date
 			);
 
 		var holidayTimes = [];
