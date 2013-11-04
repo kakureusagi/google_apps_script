@@ -451,6 +451,8 @@ var row = (function() {
 		if (!cache.isRow(y, CACHE_NAME)) return null;
 
 		var temp = cache.getRow(y, CACHE_NAME);
+		if (!temp) return null;
+
 		return {
 			start: timeController.get(temp.start),
 			time: temp.time,
@@ -504,22 +506,23 @@ var row = (function() {
 			targetRow.push(getStartAndTime(y));
 		}
 		else {
-			for (y = 0 ; y < project.getHeight() ; ++i) {
-				targetRow.push(getStartAndTime(y));
+			for (var h = 0 ; h < project.getHeight() ; ++h) {
+				targetRow.push(getStartAndTime(AREA_ROOT_Y + h));
 			}
 		}
 
-		targetRow.forEach(function(temp) {
+		targetRow.forEach(function(temp, index) {
 			if (!temp) return;
 
 			var start = temp.start;
 			var time = temp.time;
+			var posY = y ? y : AREA_ROOT_Y + index;
 
 			//プロジェクト期間より後ろの日付は無視
 			if (projectPeriod.end.millisecond < start.millisecond) return;
 
 			if (start.millisecond < projectPeriod.start.millisecond) {
-				utility.toast('項目の開始日がプロジェクトの開始日よりも前になっています。', y + '行目');
+				toast('項目の開始日がプロジェクトの開始日よりも前になっています。', posY + '行目');
 				return;
 			}
 			
@@ -550,65 +553,12 @@ var row = (function() {
 				}
 
 				//平日
-				sheet.getRange(y, AREA_ROOT_X + diff).setBackground(COLOR.UNFINISHED);
+				sheet.getRange(posY, AREA_ROOT_X + diff).setBackground(COLOR.UNFINISHED);
 
 				++count;
 				++finishedCount;
 			}
-		})
-
-		for (var i = 0 ; i < targetRow.length ; ++i) {
-		}
-
-
-		/*
-		var temp = getStartAndTime(y);
-		if (!temp) return;
-
-		var start = temp.start;
-		var time = temp.time;
-
-		//プロジェクト期間より後ろの日付は無視
-		if (projectPeriod.end.millisecond < start.millisecond) return;
-
-		if (start.millisecond < projectPeriod.start.millisecond) {
-			utility.toast('項目の開始日がプロジェクトの開始日よりも前になっています。', y + '行目');
-			return;
-		}
-		
-
-		var width = project.getWidth();
-		var backgoundColors = sheet.getRange(AREA_ROOT_Y, AREA_ROOT_X, 1, width).getBackgrounds()[0];
-		var count = 0;
-		var finishedCount = 0;
-		while (finishedCount != time) {
-			var t = timeController.instance(start).plusDay(count).get();
-
-			//プロジェクトの最終日を超えてしまった
-			if (projectPeriod.end.millisecond < t.millisecond) {
-				break;
-			}
-
-			//まだプロジェクトの開始前
-			if (t.millisecond < projectPeriod.start.millisecond) {
-				++count;
-				continue;
-			}
-
-			//休みはカウントしない
-			var diff = t.diffDay(projectPeriod.start);
-			if (isHolidayColor(backgoundColors[diff])) {
-				++count;
-				continue;
-			}
-
-			//平日
-			sheet.getRange(y, AREA_ROOT_X + diff).setBackground(COLOR.UNFINISHED);
-
-			++count;
-			++finishedCount;
-		}
-		*/
+		});
 	}
 
 	function updateAll() {
