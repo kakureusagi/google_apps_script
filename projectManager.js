@@ -81,23 +81,23 @@ function check(e) {
 
 	if (project.isUpdate(x, y)) {
 		project.updateCache();
-		var period = project.getPeriod();
-		holiday.update(period.start, period.end);
+		row.updateCacheAll();
+
 		project.update();
-		row.updateAll();
+		row.update();
 		return;
 	}
 
 	if (row.isUpdate(x, y)) {
-		project.update();
+		project.update(y);
 		row.updateCache(y);
-		row.updateAll();
+		row.update(y);
 		return;
 	}
 
 	if (project.isSpecialColumn(x, y)) {
 		project.update();
-		row.updateAll();
+		row.update();
 		return;
 	}
 }
@@ -249,12 +249,14 @@ var project = (function() {
 		};
 
 		cache.set(CACHE_NAME, temp);
+		holiday.update(period.start, period.end);
 	}
 
 	/**
 	 * プロジェクトのマスを更新する
+	 * @param {number} y 指定がなければプロジェクト全体を、指定があれば特定の行だけ更新
 	 */
-	function update() {
+	function update(y) {
 		var analyzer = new Analyzer('updateProjectPeriod');
 
 		var projectPeriod = project.getPeriod();
@@ -339,12 +341,16 @@ var project = (function() {
 					.setValue(times[x].day);
 			}
 		}
-		initializeAll();
-		initializeYearAndMonth(YEAR_Y, 'year');
-		initializeYearAndMonth(MONTH_Y, 'month');
-		initializeDay();
-		
-		analyzer.set('initialize year, month and day');
+
+		//日付の設定は全体の変更時だけで十分
+		if (!y) {
+			initializeAll();
+			initializeYearAndMonth(YEAR_Y, 'year');
+			initializeYearAndMonth(MONTH_Y, 'month');
+			initializeDay();
+			
+			analyzer.set('initialize year, month and day').back();
+		}
 
 		/**
 		 * 日付に色づけ
@@ -358,7 +364,13 @@ var project = (function() {
 		var holidayTimes = holiday.getTimes();
 		for (var x = 0 ; x < width ; ++x) {
 
-			targetColorRange = sheet.getRange(AREA_ROOT_Y, AREA_ROOT_X + x, height, 1)
+			var targetColorRange = null;
+			if (y) {
+				targetColorRange = sheet.getRange(y, AREA_ROOT_X + x);
+			}
+			else {
+				targetColorRange = sheet.getRange(AREA_ROOT_Y, AREA_ROOT_X + x, height, 1);
+			}
 			time = times[x];
 
 			//休みとして指定されている
@@ -436,7 +448,7 @@ var row = (function() {
 	}
 
 	function getStartAndTime(y) {
-		if (!cache.isRow(y)) return null;
+		if (!cache.isRow(y, CACHE_NAME)) return null;
 
 		var temp = cache.getRow(y, CACHE_NAME);
 		return {
@@ -452,6 +464,23 @@ var row = (function() {
 			time: startAndTime.time,
 		};
 		cache.setRow(y, CACHE_NAME, temp);
+	}
+
+	function updateCacheAll() {
+		var startAndTimes = sheet.getRange(AREA_ROOT_Y, START_X, project.getHeight(), 2).getValues();
+		for (var i = 0 ; i < startAndTimes.length ; ++i) {
+			var start = startAndTimes[i][0];
+			var time = startAndTimes[i][1];
+			var data = null;
+			if (isDate(start) && isNumber(time) && time > 0) {
+				data = {
+					start: timeController.get(start).millisecond,
+					time: time,
+				};
+			}
+
+			cache.setRow(AREA_ROOT_Y + i, CACHE_NAME, data);
+		}
 	}
 
 	function isUpdate(x, y) {
@@ -470,7 +499,70 @@ var row = (function() {
 		var projectPeriod = project.getPeriod();
 		if (!projectPeriod) return;
 
-		var temp = getStartAndTimeFromCell(y);
+		var targetRow = [];
+		if (y) {
+			targetRow.push(getStartAndTime(y));
+		}
+		else {
+			for (y = 0 ; y < project.getHeight() ; ++i) {
+				targetRow.push(getStartAndTime(y));
+			}
+		}
+
+		targetRow.forEach(function(temp) {
+			if (!temp) return;
+
+			var start = temp.start;
+			var time = temp.time;
+
+			//プロジェクト期間より後ろの日付は無視
+			if (projectPeriod.end.millisecond < start.millisecond) return;
+
+			if (start.millisecond < projectPeriod.start.millisecond) {
+				utility.toast('項目の開始日がプロジェクトの開始日よりも前になっています。', y + '行目');
+				return;
+			}
+			
+
+			var width = project.getWidth();
+			var backgoundColors = sheet.getRange(AREA_ROOT_Y, AREA_ROOT_X, 1, width).getBackgrounds()[0];
+			var count = 0;
+			var finishedCount = 0;
+			while (finishedCount != time) {
+				var t = timeController.instance(start).plusDay(count).get();
+
+				//プロジェクトの最終日を超えてしまった
+				if (projectPeriod.end.millisecond < t.millisecond) {
+					break;
+				}
+
+				//まだプロジェクトの開始前
+				if (t.millisecond < projectPeriod.start.millisecond) {
+					++count;
+					continue;
+				}
+
+				//休みはカウントしない
+				var diff = t.diffDay(projectPeriod.start);
+				if (isHolidayColor(backgoundColors[diff])) {
+					++count;
+					continue;
+				}
+
+				//平日
+				sheet.getRange(y, AREA_ROOT_X + diff).setBackground(COLOR.UNFINISHED);
+
+				++count;
+				++finishedCount;
+			}
+		})
+
+		for (var i = 0 ; i < targetRow.length ; ++i) {
+		}
+
+
+		/*
+		var temp = getStartAndTime(y);
 		if (!temp) return;
 
 		var start = temp.start;
@@ -516,6 +608,7 @@ var row = (function() {
 			++count;
 			++finishedCount;
 		}
+		*/
 	}
 
 	function updateAll() {
@@ -534,6 +627,7 @@ var row = (function() {
 		isUpdate: isUpdate,
 		update: update,
 		updateCache: updateCache,
+		updateCacheAll: updateCacheAll,
 		updateAll: updateAll,
 	};
 })();
