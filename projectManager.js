@@ -38,7 +38,7 @@ var COLOR = {
 	HOLIDAY: '#ff0000', //土日
 	NATIONAL_HOLIDAY: '#ff8888', //祝日
 	NONE: '#ffffff', //平日
-	UNFINISHED: '#c5d5f7',
+	UNFINISHED: '#d5e5ff',
 	FINISHED: '#1660f4',
 };
 
@@ -71,7 +71,7 @@ function checkTimer() {
 }
 
 function edit(e) {
-	var analyzer = new Analyzer('onEdit');
+	var analyzer = new Analyzer('edit');
 
 	try {
 		check(e);
@@ -84,33 +84,43 @@ function edit(e) {
 }
 
 function check(e) {
-	if (e.range.getWidth() != 1 || e.range.getHeight() != 1) {
-		return;
+	var left = e.range.getColumn();
+	var top = e.range.getRow();
+	var values = e.range.getValues();
+
+	var rowChecker = {};
+
+	if (!lock.start()) {
+		toast('処理が追いついていません。少し待ってから操作して下さいね。');
 	}
+	for (var x = left ; x < left + values[0].length ; ++x) {
+		for (var y = top ; y < top + values.length ; ++y) {
 
-	var y = e.range.getRow();
-	var x = e.range.getColumn();
+			if (project.isUpdate(x, y)) {
+				project.updateCache();
+				row.updateCacheAll();
 
-	if (project.isUpdate(x, y)) {
-		project.updateCache();
-		row.updateCacheAll();
+				project.update();
+				row.update();
+				continue;
+			}
 
-		project.update();
-		row.update();
-		return;
-	}
+			if (row.isUpdate(x, y)) {
+				if (rowChecker[y]) continue;
+				rowChecker[y] = true;
 
-	if (row.isUpdate(x, y)) {
-		project.update(y);
-		row.updateCache(y);
-		row.update(y);
-		return;
-	}
+				project.update(y);
+				row.updateCache(y);
+				row.update(y);
+				continue;
+			}
 
-	if (project.isSpecialColumn(x, y)) {
-		project.update();
-		row.update();
-		return;
+			if (project.isSpecialColumn(x, y)) {
+				project.update();
+				row.update();
+				continue;
+			}
+		}
 	}
 }
 
@@ -204,6 +214,7 @@ var project = (function() {
 		return {
 			start: timeController.get(temp.start),
 			end: timeController.get(temp.end),
+			width: temp.width,
 		};
 	}
 
@@ -431,6 +442,9 @@ var project = (function() {
 	function setToday() {
 		var period = getPeriod();
 		if (!period) return;
+
+		//一旦全範囲をリセット
+		sheet.getRange(YEAR_Y, AREA_ROOT_X, 3, period.width).setBackground(COLOR.NONE);
 
 		var today = timeController.get();
 		if (today.millisecond < period.start.millisecond || period.end.millisecond < today.millisecond) return;
