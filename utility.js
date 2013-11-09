@@ -4,7 +4,7 @@
 
 
 function toast(str, second) {
-	spreadsheet.toast(str, second ? second: 5);
+	spreadsheet.toast(str, 'Message.', second ? second: 5);
 }
 
 function isNumber(value) {

@@ -10,12 +10,6 @@ var SPECIAL = {
 	NORMAL: '出',
 };
 
-var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-var sheet = SpreadsheetApp.getActiveSheet();
-
-
-
-
 //position
 var AREA_ROOT_X = 6;
 var AREA_ROOT_Y = 6;
@@ -52,21 +46,31 @@ var ALIGN = 'left';
 
 
 
+// global
+var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+var sheet = SpreadsheetApp.getActiveSheet();
 
+
+
+
+/**
+ * for simple trigger
+ */
 function onOpen(e) {
+	spreadsheet.addMenu('スケジュール', [
+		{name: '初期化', functionName: 'initializeTrigger'},
+		{name: '更新', functionName: 'updateAll'},
+	]);
 }
 
-function onEdit(e) {
-}
 
+/**
+ * for custom trgger
+ */
 
 function open(e) {
 	project.updateCache();
 	row.updateCacheAll();
-	project.setToday();
-}
-
-function checkTimer() {
 	project.setToday();
 }
 
@@ -78,10 +82,35 @@ function edit(e) {
 	}
 	catch(e) {
 		Logger.log(e);
+		toast(e);
 	}
 
 	analyzer.set('all time');
 }
+
+function checkToday() {
+	project.setToday();
+}
+
+function prolongCache() {
+	cache.prolong();
+}
+
+function initializeTrigger() {
+	trigger.initialize();
+}
+
+function updateAll() {
+	project.updateCache();
+	row.updateCacheAll();
+
+	project.update();
+	row.update();
+}
+
+
+
+
 
 function check(e) {
 	var left = e.range.getColumn();
@@ -123,15 +152,6 @@ function check(e) {
 		}
 	}
 }
-
-function prolongCache() {
-	cache.prolong();
-}
-
-function removeCache() {
-	cache.removeAll();
-}
-
 
 function updateHoliday() {
 	var period = project.getPeriod();
