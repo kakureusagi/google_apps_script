@@ -3,8 +3,8 @@
 
 
 
-function toast(str, second) {
-	spreadsheet.toast(str, 'Message.', second ? second: 5);
+function toast(title, str, second) {
+	spreadsheet.toast(str, title, second ? second: 5);
 }
 
 function isNumber(value) {

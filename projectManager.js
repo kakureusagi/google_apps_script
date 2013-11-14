@@ -69,9 +69,8 @@ function onOpen(e) {
  */
 
 function open(e) {
-	project.updateCache();
-	row.updateCacheAll();
 	project.setToday();
+	rangeController.save();
 }
 
 function edit(e) {
@@ -82,7 +81,7 @@ function edit(e) {
 	}
 	catch(e) {
 		Logger.log(e);
-		toast(e);
+		toast('Error!', e);
 	}
 
 	analyzer.set('all time');
@@ -90,6 +89,7 @@ function edit(e) {
 
 function checkToday() {
 	project.setToday();
+	rangeController.save();
 }
 
 function prolongCache() {
@@ -101,11 +101,11 @@ function initializeTrigger() {
 }
 
 function updateAll() {
-	project.updateCache();
-	row.updateCacheAll();
-
+	project.updateHoliday();
 	project.update();
 	row.update();
+
+	rangeController.save();
 }
 
 
@@ -113,53 +113,87 @@ function updateAll() {
 
 
 function check(e) {
+	var analyzer = new Analyzer('check');
 	var left = e.range.getColumn();
 	var top = e.range.getRow();
 	var values = e.range.getValues();
 
+	var projectChecker = false;
 	var rowChecker = {};
 
 	if (!lock.start()) {
-		toast('処理が追いついていません。少し待ってから操作して下さいね。');
+		toast('競合エラー！', '処理が追いついていません。少し待ってから操作して下さいね。');
 	}
+
 	for (var x = left ; x < left + values[0].length ; ++x) {
 		for (var y = top ; y < top + values.length ; ++y) {
 
 			if (project.isUpdate(x, y)) {
-				project.updateCache();
-				row.updateCacheAll();
-
+				project.updateHoliday();
+				analyzer.set('holiday update');
 				project.update();
+				analyzer.set('project update');
 				row.update();
-				continue;
+				analyzer.set('row update');
+				rangeController.save();
+				analyzer.set('range save');
+				return;
 			}
 
-			if (row.isUpdate(x, y)) {
-				if (rowChecker[y]) continue;
-				rowChecker[y] = true;
-
-				project.update(y);
-				row.updateCache(y);
-				row.update(y);
-				continue;
-			}
-
-			if (project.isSpecialColumn(x, y)) {
+			if (row.isUpdate(x, y) || prject.isSpecialColumn(x, y)) {
 				project.update();
+				analyzer.set('project update');
 				row.update();
-				continue;
+				analyzer.set('row update');
+				rangeController.save();
+				analyzer.set('range save');
+				return;
 			}
 		}
 	}
 }
 
-function updateHoliday() {
-	var period = project.getPeriod();
-	if (!period) return;
 
-	holiday.update(period.start, period.end);
-}
 
+
+/**
+ * トリガー操作モジュール
+ */
+
+var trigger = (function() {
+
+	function initialize() {
+		//一旦全てのトリガを削除
+		var triggers = ScriptApp.getProjectTriggers();
+		triggers.forEach(function(t, i) {
+			ScriptApp.deleteTrigger(t);
+		});
+
+		ScriptApp.newTrigger('open')
+			.forSpreadsheet(spreadsheet.getId())
+			.onOpen()
+			.create();
+
+		ScriptApp.newTrigger('edit')
+			.forSpreadsheet(spreadsheet.getId())
+			.onEdit()
+			.create();
+			
+		ScriptApp.newTrigger('prolongCache')
+			.timeBased()
+			.everyHours(1)
+			.create();
+			
+		ScriptApp.newTrigger('checkToday')
+			.timeBased()
+			.everyHours(1)
+			.create();
+	}
+
+	return {
+		initialize: initialize,
+	};
+})();
 
 
 
@@ -167,14 +201,13 @@ var project = (function() {
 	var CACHE_NAME = 'project_cache';
 
 	function getDiffWidth(startTimeInstance, endTimeInstance) {
-		return startTimeInstance.diffDay(endTimeInstance) + 1
+		return startTimeInstance.diffDay(endTimeInstance) + 1;
 	}
 
 	function getPeriodFromCell() {
-		var startAndEnd = sheet.getRange(PROJECT_START_Y, PROJECT_START_X, 2, 1).getValues();
-		var start = startAndEnd[0][0];
-		var end = startAndEnd[1][0];
-
+		var values = rangeController.getValues();
+		var start = values[PROJECT_START_Y - 1][PROJECT_START_X - 1];
+		var end = values[PROJECT_START_Y][PROJECT_START_X - 1];
 		if (!isDate(start) || !isDate(end)) {
 			return null;
 		}
@@ -228,14 +261,7 @@ var project = (function() {
 	 * @return {Objedt}
 	 */
 	function getPeriod() {
-		if (!cache.is(CACHE_NAME)) return null;
-
-		var temp = cache.get(CACHE_NAME);
-		return {
-			start: timeController.get(temp.start),
-			end: timeController.get(temp.end),
-			width: temp.width,
-		};
+		return getPeriodFromCell();
 	}
 
 	/**
@@ -243,10 +269,8 @@ var project = (function() {
 	 * @return {number} 
 	 */
 	function getWidth() {
-		if (!cache.is(CACHE_NAME)) return 0;
-
-		var item = cache.get(CACHE_NAME);
-		return item.width;
+		var p = getPeriod();
+		return getDiffWidth(p.start, p.end);
 	}
 
 	/**
@@ -254,7 +278,15 @@ var project = (function() {
 	 * @return {number} 
 	 */
 	function getHeight() {
-		return sheet.getLastRow() - (AREA_ROOT_Y - 1);
+		return rangeController.getValues().length - (AREA_ROOT_Y - 1);
+	}
+
+	function getCurrentWidth() {
+		return rangeController.getWidth() - (AREA_ROOT_X - 1);
+	}
+
+	function getCurrentHeight() {
+		//todo:
 	}
 
 	/**
@@ -262,11 +294,11 @@ var project = (function() {
 	 * @return {Object} 
 	 */
 	function getCurrentPeriod() {
+		var values = rangeController.getValues();
 		function getYMD(x) {
-			var range = sheet.getRange(YEAR_Y, x, 3, 1).getValues();
-			var year = range[0][0];
-			var month = range[1][0];
-			var day = range[2][0];
+			var year = values[YEAR_Y - 1][x - 1];
+			var month = values[YEAR_Y][x - 1];
+			var day = values[YEAR_Y + 1][x - 1];
 			if (!year || !month || !day) {
 				return null;
 			}
@@ -283,180 +315,134 @@ var project = (function() {
 		return temp;
 	}
 
-	/**
-	 * プロジェクトの期間を更新する
-	 */
-	function updateCache() {
-		var period = getPeriodFromCell();
+	function updateHoliday() {
+		var period = project.getPeriod();
 		if (!period) return;
 
-		var temp = {
-			start: period.start.millisecond,
-			end: period.end.millisecond,
-			width: getDiffWidth(period.start, period.end),
-		};
-
-		cache.set(CACHE_NAME, temp);
 		holiday.update(period.start, period.end);
 	}
 
 	/**
 	 * プロジェクトのマスを更新する
-	 * @param {number} y 指定がなければプロジェクト全体を、指定があれば特定の行だけ更新
 	 */
-	function update(y) {
-		var analyzer = new Analyzer('updateProjectPeriod');
-
+	function update() {
 		var projectPeriod = project.getPeriod();
 		if (!projectPeriod) return;
 
-		var currentPeriod = getCurrentPeriod();
-		analyzer.set('get project and current time.');
-
-		if (currentPeriod) {
-			//既に入力済みなので、追加・修正する
-			var startDiff = projectPeriod.start.diffDay(currentPeriod.start);
-			if (startDiff > 0) {
-				//入力済みの日にちと現在の設定値を比較して、現在の方が開始日が前なら追加、後なら削除
-				if (projectPeriod.start.millisecond < currentPeriod.start.millisecond) {
-					sheet.insertColumnsBefore(AREA_ROOT_X, startDiff);
-					analyzer.set('insert columns').back();
-				}
-				else if (currentPeriod.start.millisecond < projectPeriod.start.millisecond) {
-					var currentWidth = getDiffWidth(currentPeriod.start, currentPeriod.end);
-					if (startDiff < currentWidth) {
-						sheet.deleteColumns(AREA_ROOT_X, startDiff);
-						analyzer.set('delete different columns').back();
+		/**
+		 * 現在の日付と比較して、列の追加・削除が必要なら行う
+		 */
+		function comparePeriod() {
+			var currentPeriod = getCurrentPeriod();
+			if (currentPeriod) {
+				//既に入力済みなので、追加・修正する
+				var startDiff = projectPeriod.start.diffDay(currentPeriod.start);
+				if (startDiff > 0) {
+					//入力済みの日にちと現在の設定値を比較して、現在の方が開始日が前なら追加、後なら削除
+					if (projectPeriod.start.millisecond < currentPeriod.start.millisecond) {
+						rangeController.insertColumnsBefore(AREA_ROOT_X, startDiff);
+					}
+					else if (currentPeriod.start.millisecond < projectPeriod.start.millisecond) {
+						var currentWidth = getDiffWidth(currentPeriod.start, currentPeriod.end);
+						if (startDiff < currentWidth) {
+							rangeController.deleteColumns(AREA_ROOT_X, startDiff);
+						}
 					}
 				}
 			}
 		}
+		comparePeriod();
+		
 
-		var width = getWidth();
-		var lastColumn = sheet.getLastColumn();
-		if (lastColumn >= AREA_ROOT_X + width) {
-			//不要な領域を削除
-			sheet.deleteColumns(AREA_ROOT_X + width, lastColumn - (AREA_ROOT_X - 1 + width));
-			analyzer.set('delete unnecessary columns').back();
+		/**
+		 * プロジェクトの期間と列の長さを合わせる
+		 */
+		function adjustProjectWidth() {
+		 	var currentWidth = getCurrentWidth();
+		 	var projectWidth = getWidth();
+		 	if (currentWidth > projectWidth) {
+		 		rangeController.deleteColumns(AREA_ROOT_X + projectWidth - 1, currentWidth - projectWidth);
+		 	}
+		 	else if (currentWidth < projectWidth) {
+		 		rangeController.insertColumnsAfter(AREA_ROOT_X + currentWidth - 1, projectWidth - currentWidth);
+		 	}
 		}
+		adjustProjectWidth();
 
 		/**
 		 * 日付を入力
 		 */
 
 		//必要な日付を予め計算
+		var width = getWidth();
+		var height = getHeight();
 		var times = [];
 		for (var x = 0 ; x < width ; ++x) {
 			times[x] = timeController.instance(projectPeriod.start).plusDay(x).get();
 		}
 
-		analyzer.set('compare project time width current time');
+		function inputDate() {
+			var values = rangeController.getValues();
+			for (var x = 0 ; x < width ; ++x) {
+				values[YEAR_Y - 1][AREA_ROOT_X - 1 + x] = times[x].year;
+				values[MONTH_Y - 1][AREA_ROOT_X - 1 + x] = times[x].month;
+				values[DAY_Y - 1][AREA_ROOT_X - 1 + x] = times[x].day;
 
-		var height = getHeight();
+				sheet.setColumnWidth(AREA_ROOT_X + x, 20);
+			}
 
-		function initializeAll() {
 			sheet
 				.getRange(YEAR_Y, AREA_ROOT_X, 3, width)
-				.setFontSize(FONT_SIZE)
-				.setHorizontalAlignment(ALIGN);
+				.setHorizontalAlignment(ALIGN)
+				.setFontSize(FONT_SIZE);
 		}
-		function initializeYearAndMonth(y, yearOrMonth) {
-			var current = 0;
-			function mergeAndSet(x, value) {
-				sheet
-					.getRange(y, AREA_ROOT_X + current, 1, x - current + 1)
-					.setValue(value);
-				current = x + 1;
-			}
-
-			var startValue = times[0][yearOrMonth];
-			for (var x = 1 ; x < width ; ++x) {
-				if (times[x][yearOrMonth] != startValue) {
-					mergeAndSet(x - 1, startValue);
-					startValue = times[x][yearOrMonth];
-				}
-
-				if (x == width - 1) {
-					mergeAndSet(x, times[x][yearOrMonth]);
-				}
-			}
-		}
-		function initializeDay() {
-			for (var x = 0 ; x < width ; ++x) {
-				sheet
-					.autoResizeColumn(AREA_ROOT_X + x)
-					.getRange(DAY_Y, AREA_ROOT_X + x)
-					.setValue(times[x].day);
-			}
-		}
-
-		//日付の設定は全体の変更時だけで十分
-		if (!y) {
-			initializeAll();
-			initializeYearAndMonth(YEAR_Y, 'year');
-			initializeYearAndMonth(MONTH_Y, 'month');
-			initializeDay();
-			
-			analyzer.set('initialize year, month and day').back();
-		}
+		inputDate();
 
 		/**
 		 * 日付に色づけ
 		 */
+		function makeColor() {
+			var values = rangeController.getValues();
+			var backgrounds = rangeController.getBackgrounds();
+			var specialColumn = values[SPECIAL_DAY_Y - 1];
 
-		var specialColumn = sheet.getRange(SPECIAL_DAY_Y, AREA_ROOT_X, 1, width).getValues()[0];
+			var time = null;
+			var isHoliday = false;
+			var holidayTimes = holiday.getTimes();
 
-		var targetColorRange = null;
-		var time = null;
-		var isHoliday = false;
-		var holidayTimes = holiday.getTimes();
-		for (var x = 0 ; x < width ; ++x) {
-
-			var targetColorRange = null;
-			if (y) {
-				targetColorRange = sheet.getRange(y, AREA_ROOT_X + x);
+			function isHolidayTime(time) {
+				for (var i = 0 ; i < holidayTimes.length ; ++i) {
+					if (time.millisecond == holidayTimes[i].millisecond) {
+						return true;
+					}
+				}
+				return false;
 			}
-			else {
-				targetColorRange = sheet.getRange(AREA_ROOT_Y, AREA_ROOT_X + x, height, 1);
-			}
-			time = times[x];
+			for (var x = 0 ; x < width ; ++x) {
+				time = times[x];
+				var color = "";
+				if (specialColumn[AREA_ROOT_X - 1 + x] == SPECIAL.HOLIDAY) {
+					color = COLOR.HOLIDAY;
+				}
+				else if (specialColumn[AREA_ROOT_X - 1 + x] == SPECIAL.NORMAL) {
+					color = COLOR.NONE;
+				}
+				else if (isHolidayTime(time)) {
+					color = COLOR.NATIONAL_HOLIDAY;
+				}
+				else if (time.youbi == '土' || time.youbi == '日') {
+					color = COLOR.HOLIDAY;
+				}
+				else {
+					color = COLOR.NONE;
+				}
 
-			//休みとして指定されている
-			if (specialColumn[x] == SPECIAL.HOLIDAY) {
-				targetColorRange.setBackground(COLOR.HOLIDAY);
-				continue;
-			}
-
-			//出勤日として指定されている
-			if (specialColumn[x] == SPECIAL.NORMAL) {
-				targetColorRange.setBackground(COLOR.NONE);
-				continue;
-			}
-
-			//祝日
-			isHoliday = false;
-			for (var i = 0 ; i < holidayTimes.length ; ++i) {
-				if (time.millisecond == holidayTimes[i].millisecond) {
-					targetColorRange.setBackground(COLOR.NATIONAL_HOLIDAY);
-					isHoliday = true;
-					break;
+				for (var y = 0 ; y < height ; ++y) {
+					backgrounds[AREA_ROOT_Y - 1 + y][AREA_ROOT_X - 1 + x] = color;
 				}
 			}
-			if (isHoliday) {
-				continue;
-			}
-
-			//土日
-			if (time.youbi == '土' || time.youbi == '日') {
-				targetColorRange.setBackground(COLOR.HOLIDAY);
-				continue;
-			}
-
-			//平日
-			targetColorRange.setBackground(COLOR.NONE);
 		}
-
-		analyzer.set('set color on days');
+		makeColor();
 	}
 
 	function setToday() {
@@ -464,21 +450,28 @@ var project = (function() {
 		if (!period) return;
 
 		//一旦全範囲をリセット
-		sheet.getRange(YEAR_Y, AREA_ROOT_X, 3, period.width).setBackground(COLOR.NONE);
+		var backgrounds = rangeController.getBackgrounds();
+		for (var y = 0 ; y < 3 ; ++y) {
+			for (var x = 0 ; x < getWidth() ; ++x) {
+				backgrounds[YEAR_Y - 1 + y][AREA_ROOT_X - 1 + x] = COLOR.NONE;
+			}
+		}
 
 		var today = timeController.get();
 		if (today.millisecond < period.start.millisecond || period.end.millisecond < today.millisecond) return;
 
 		var diff = today.diffDay(period.start);
-		sheet.getRange(YEAR_Y, AREA_ROOT_X + diff, 3, 1).setBackground(COLOR.TODAY);
+		for (y = 0 ; y < 3 ; ++y) {
+			backgrounds[YEAR_Y - 1 + y][AREA_ROOT_X - 1 + diff] = COLOR.TODAY;
+		}
 	}
 
 
 	return {
 		isSpecialColumn: isSpecialColumn,
-
 		isUpdate: isUpdate,
-		updateCache: updateCache,
+
+		updateHoliday: updateHoliday,
 		update: update,
 
 		getPeriod: getPeriod,
@@ -503,11 +496,13 @@ var row = (function() {
 		return true;
 	}
 
-	function getRowInfoFromCell(y) {
-		var info = sheet.getRange(y, START_X, 1, 3).getValues()[0];
-		var start = info[0];
-		var time = Math.floor(info[1]);
-		var progress = info[2] ? info[2] : 0;
+	function getRowInfoFromCell(row) {
+		var values = rangeController.getValues();
+		var start = values[row - 1][START_X - 1];
+		var time = values[row - 1][START_X];
+		var progress = values[row - 1][START_X + 1];
+		progress = progress ? progress : 0;
+
 		if (!validateInfo(start, time, progress)) {
 			return null;
 		}
@@ -520,16 +515,7 @@ var row = (function() {
 	}
 
 	function getRowInfo(y) {
-		if (!cache.isRow(y, CACHE_NAME)) return null;
-
-		var temp = cache.getRow(y, CACHE_NAME);
-		if (!temp) return null;
-
-		return {
-			start: timeController.get(temp.start),
-			time: temp.time,
-			progress: temp.progress,
-		};
+		return getRowInfoFromCell(y);
 	}
 
 	function updateCache(y) {
@@ -589,21 +575,22 @@ var row = (function() {
 			}
 		}
 
-		var backgoundColors = sheet.getRange(AREA_ROOT_Y, AREA_ROOT_X, 1, project.getWidth()).getBackgrounds()[0];
+		var backgrounds = rangeController.getBackgrounds();
 		infos.forEach(function(info, index) {
 			if (!info) return;
 
 			var start = info.start;
 			var time = info.time;
 			var progress = info.progress;
-			var posY = y ? y : AREA_ROOT_Y + index;
+			//var posY = y ? y : AREA_ROOT_Y + index;
+			var posY = AREA_ROOT_Y + index;
 
 			//プロジェクト期間より後ろの日付は無視
 			if (projectPeriod.end.millisecond < start.millisecond) return;
 
 			//プロジェクトの期間より前の日付
 			if (start.millisecond < projectPeriod.start.millisecond) {
-				toast('項目の開始日がプロジェクトの開始日よりも前になっています。', posY + '行目');
+				toast('期間エラー！', '項目の開始日がプロジェクトの開始日よりも前になっています。' + posY + '行目');
 				return;
 			}
 			
@@ -630,7 +617,7 @@ var row = (function() {
 
 				//休みはカウントしない
 				var diff = t.diffDay(projectPeriod.start);
-				if (isHolidayColor(backgoundColors[diff])) {
+				if (isHolidayColor(backgrounds[posY - 1][AREA_ROOT_X - 1 + diff])) {
 					++count;
 					continue;
 				}
@@ -638,10 +625,10 @@ var row = (function() {
 				//平日
 				++finishedCount;
 				if (finishedCount > finishedPos) {
-					sheet.getRange(posY, AREA_ROOT_X + diff).setBackground(COLOR.UNFINISHED);
+					backgrounds[posY - 1][AREA_ROOT_X - 1 + diff] = COLOR.UNFINISHED;
 				}
 				else {
-					sheet.getRange(posY, AREA_ROOT_X + diff).setBackground(COLOR.FINISHED);
+					backgrounds[posY - 1][AREA_ROOT_X - 1 + diff] = COLOR.FINISHED;
 				}
 
 				++count;
@@ -649,24 +636,11 @@ var row = (function() {
 		});
 	}
 
-	function updateAll() {
-		var analyzer = new Analyzer('updateAllRows');
-
-		var height = project.getHeight();
-		for (var y = 0 ; y < height ; ++y) {
-			if (!isUpdate(PERIOD_X, AREA_ROOT_Y + y)) continue;
-			update(AREA_ROOT_Y + y);
-		}
-
-		analyzer.set('update all rows');
-	}
-
 	return {
 		isUpdate: isUpdate,
 		update: update,
 		updateCache: updateCache,
 		updateCacheAll: updateCacheAll,
-		updateAll: updateAll,
 	};
 })();
 
