@@ -149,6 +149,8 @@ function updateAll() {
 		analyzer.set('update project');
 		row.update();
 		analyzer.set('update rows');
+		project.setToday();
+		analyzer.set('update today color');
 	});
 }
 
@@ -201,6 +203,8 @@ function check(e) {
 				analyzer.set('update project')
 				row.update();
 				analyzer.set('update rows');
+				project.setToday();
+				analyzer.set('update today color');
 				return;
 			}
 
@@ -652,7 +656,10 @@ var row = (function() {
 	 */
 	function updateCache(y) {
 		var info = getRowInfoFromCell(y);
-		if (!info) return;
+		if (!info) {
+			cache.setRow(y, CACHE_NAME, null);
+			return;
+		}
 
 		var temp = {
 			start: info.start.millisecond,
@@ -694,8 +701,9 @@ var row = (function() {
 		if (y < AREA_ROOT_Y) return false;
 		if (x != START_X && x != PERIOD_X && x != PROGRESS_X) return false;
 
+		var cacheInfo = getRowInfo(y);
 		var info = getRowInfoFromCell(y);
-		if (!info) {
+		if (!cacheInfo && !info) {
 			return false;
 		}
 
