@@ -32,7 +32,7 @@ var COLOR = {
 	HOLIDAY: '#ff0000', //土日
 	NATIONAL_HOLIDAY: '#ff8888', //祝日
 	NONE: '#ffffff', //平日
-	UNFINISHED: '#d5e5ff',
+	UNFINISHED: '#c5d5ef',
 	FINISHED: '#1660f4',
 };
 
@@ -60,7 +60,7 @@ function onOpen(e) {
 		{name: '担当者でソート', functionName: 'sortByStaff'},
 	]);
 
-	open(e);
+	//open(e);
 }
 
 
@@ -72,14 +72,12 @@ function onOpen(e) {
  * オープン時のトリガ
  */
 function open(e) {
-	/*
 	tryLock(function() {
 		project.updateCache();
 		updateHolidayCache();
 		row.updateCacheAll();
 		project.setToday();
 	});
-	*/
 }
 
 /**
