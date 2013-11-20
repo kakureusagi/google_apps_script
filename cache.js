@@ -5,11 +5,12 @@ var cache = (function() {
 	var ITEMS = spreadsheet.getId() + sheet.getSheetId() + '_' + 'cache_items';
 	var mPublicCache = CacheService.getPublicCache();
 
-	var CACHE_TIME = 60 * 24 * 6; //maximum is 6 hours.
+	var CACHE_TIME = 60 * 24 * 5; //maximum is 6 hours.
 	var NORMAL_HEADER = 'cache_header_normal_';
 	var ROW_HEADER = 'cache_header_row_';
 	var COLUMN_HEADER = 'cache_header_column_';
 	var CELL_HEADER = 'cache_header_cell_';
+	var ITEM_FOR_PROLONG = 'cache_item_for_prolong';
 
 	var mItems = {};
 
@@ -57,6 +58,7 @@ var cache = (function() {
 	}
 
 	function prolong() {
+		mItems[ITEM_FOR_PROLONG] = new Date().getTime();
 		var items = Utilities.jsonStringify(mItems);
 		mPublicCache.put(ITEMS, items, CACHE_TIME);
 	}
