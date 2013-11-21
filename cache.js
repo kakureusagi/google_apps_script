@@ -13,6 +13,8 @@ var cache = (function() {
 	var ITEM_FOR_PROLONG = 'cache_item_for_prolong';
 
 	var mItems = {};
+	var mIsEmptyOrExpired = true;
+	var mBatchStartCount = 0;
 
 
 	function getKey(key) {
@@ -28,6 +30,19 @@ var cache = (function() {
 		return CELL_HEADER + x + '_' + y + '_' + key;
 	}
 
+	function updateCache() {
+		if (isBatch()) return;
+
+		mItems[ITEM_FOR_PROLONG] = new Date().getTime();
+		var items = Utilities.jsonStringify(mItems);
+		mPublicCache.put(ITEMS, items, CACHE_TIME);
+	}
+
+
+
+	function isEmptyOrExpired() {
+		return mIsEmptyOrExpired;
+	}
 
 	function is(key) {
 		return !isUndefined(mItems[key]);
@@ -43,8 +58,8 @@ var cache = (function() {
 	}
 	function set(key, value) {
 		mItems[key] = value;
-		var items = Utilities.jsonStringify(mItems);
-		mPublicCache.put(ITEMS, items, CACHE_TIME);
+		mIsEmptyOrExpired = false;
+		updateCache();
 	}
 	function remove(key) {
 		delete mItems[key];
@@ -58,21 +73,34 @@ var cache = (function() {
 	}
 
 	function prolong() {
-		mItems[ITEM_FOR_PROLONG] = new Date().getTime();
-		var items = Utilities.jsonStringify(mItems);
-		mPublicCache.put(ITEMS, items, CACHE_TIME);
+		updateCache();
 	}
 
 	function checkCell(x, y) {
 		return isNumber(x) && isNumber(y);
 	}
 
+	function startBatch() {
+		++mBatchStartCount;
+	}
+	function finishBatch() {
+		if (mBatchStartCount == 0) return;
+
+		--mBatchStartCount;
+		if (mBatchStartCount == 0) {
+			updateCache();
+		}
+	}
+	function isBatch() {
+		return mBatchStartCount > 0;
+	}
+
 	function initialize() {
 		var items = mPublicCache.get(ITEMS);
 		if (!items) return;
 		
+		mIsEmptyOrExpired = false;
 		mItems = Utilities.jsonParse(items);
-		Logger.log('cache items is %s.', mItems);
 	}
 	initialize();
 
@@ -153,6 +181,12 @@ var cache = (function() {
 		removeAll: removeAll,
 
 		prolong: prolong,
+
+		isNullOrExpired: isEmptyOrExpired,
+
+		startBatch: startBatch,
+		finishBatch: finishBatch,
+		isBatch: isBatch,
 	};
 })();
 

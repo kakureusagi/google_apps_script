@@ -136,12 +136,8 @@ function updateAll() {
 	tryLock(function() {
 		var analyzer = new Analyzer('updateAll');
 
-		project.updateCache();
-		analyzer.set('update project cache');
-		updateHolidayCache();
-		analyzer.set('update holiday cache');
-		row.updateCacheAll();
-		analyzer.set('update rows cache');
+		updateCacheAll();
+		analyzer.set('update all cache');
 
 		project.update();
 		analyzer.set('update project');
@@ -150,6 +146,18 @@ function updateAll() {
 		project.setToday();
 		analyzer.set('update today color');
 	});
+}
+
+function updateCacheAll() {
+	var analyzer = new Analyzer('updateAll');
+	cache.startBatch();
+
+	project.updateCache();
+	updateHolidayCache();
+	row.updateCacheAll();
+
+	cache.finishBatch();
+	analyzer.set('update all cache');
 }
 
 /**
@@ -190,12 +198,7 @@ function check(e) {
 		for (var y = top ; y < top + values.length ; ++y) {
 
 			if (project.isUpdate(x, y)) {
-				project.updateCache();
-				analyzer.set('update project cache');
-				updateHolidayCache();
-				analyzer.set('update holiday cache');
-				row.updateCacheAll();
-				analyzer.set('update rows cache');
+				updateCacheAll();
 
 				project.update();
 				analyzer.set('update project')
@@ -210,6 +213,10 @@ function check(e) {
 				if (rowChecker[y]) continue;
 				rowChecker[y] = true;
 
+				if (cache.isNullOrExpired()) {
+					updateCacheAll();
+				}
+
 				project.update(y);
 				analyzer.set('update project one row')
 				row.updateCache(y);
@@ -220,6 +227,10 @@ function check(e) {
 			}
 
 			if (project.isSpecialColumn(x, y)) {
+				if (cache.isNullOrExpired()) {
+					updateCacheAll();
+				}
+
 				project.update();
 				analyzer.set('update project')
 				row.update();
